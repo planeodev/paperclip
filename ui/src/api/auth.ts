@@ -179,6 +179,13 @@ export const authApi = {
     await authPost("/sign-up/email", input);
   },
 
+  /** Starts the OIDC redirect (Better Auth genericOAuth); resolves with the provider URL to navigate to. */
+  signInSso: async (input: { providerId: string; callbackURL: string }) => {
+    const payload = (await authPost("/sign-in/oauth2", input)) as { url?: string } | null;
+    if (!payload?.url) throw new Error("Single sign-on is not available");
+    return payload.url;
+  },
+
   getProfile: async (): Promise<CurrentUserProfile> => {
     const res = await fetch("/api/auth/profile", {
       credentials: "include",

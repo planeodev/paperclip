@@ -1,0 +1,8 @@
+# planeodev fork only: the Vionix CI (ohanalabs-ai/github-platform docker-multiarch-cicd) builds this one service into
+# ghcr.io/planeodev/paperclip:<branch>-<sha7> (planeo-infra CLAUDE.md §9). Local: docker compose build paperclip
+services:
+  paperclip:
+    image: ghcr.io/planeodev/paperclip
+    build:
+      context: .
+      dockerfile: Dockerfile

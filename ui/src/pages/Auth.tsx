@@ -25,6 +25,7 @@ export function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [ssoPending, setSsoPending] = useState(false);
   const errorId = "auth-error";
 
   const nextPath = useMemo(
@@ -119,6 +120,33 @@ export function AuthPage() {
               ? "Use your email and password to access this instance."
               : "Create an account for this instance. Email confirmation is not required in v1."}
           </p>
+
+          {mode === "sign_in" && healthQuery.data?.sso && (
+            <div className="mt-6">
+              <button
+                type="button"
+                className="w-full rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                disabled={ssoPending}
+                onClick={async () => {
+                  const sso = healthQuery.data?.sso;
+                  if (!sso) return;
+                  setSsoPending(true);
+                  setError(null);
+                  try {
+                    window.location.assign(
+                      await authApi.signInSso({ providerId: sso.providerId, callbackURL: nextPath }),
+                    );
+                  } catch (err) {
+                    setSsoPending(false);
+                    setError(err instanceof Error ? err.message : "Single sign-on failed");
+                  }
+                }}
+              >
+                {`Sign in with ${healthQuery.data.sso.name}`}
+              </button>
+              <p className="mt-3 text-center text-xs text-muted-foreground">or use your email and password</p>
+            </div>
+          )}
 
           <form
             className="mt-6 space-y-4"
