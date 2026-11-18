@@ -2,7 +2,7 @@
 //
 // Enabled only when PAPERCLIP_AUTH_OIDC_ISSUER, PAPERCLIP_AUTH_OIDC_CLIENT_ID and PAPERCLIP_AUTH_OIDC_CLIENT_SECRET are
 // set. It adds Better Auth's genericOAuth plugin (discovery + PKCE) under the provider id `oidc`, so the callback is
-// `<public URL>/api/auth/oauth2/callback/oidc`. Users are created on their first SSO login even when
+// `<public URL>/api/auth/callback/oidc` (Better Auth >= 1.7 routes generic OAuth through the social endpoints). Users are created on their first SSO login even when
 // `auth.disableSignUp` is true: that flag only closes email/password sign-up, so a closed instance can still admit the
 // people its identity provider vouches for.
 //

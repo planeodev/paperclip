@@ -179,9 +179,16 @@ export const authApi = {
     await authPost("/sign-up/email", input);
   },
 
-  /** Starts the OIDC redirect (Better Auth genericOAuth); resolves with the provider URL to navigate to. */
+  /**
+   * Starts the OIDC redirect; resolves with the provider URL to navigate to. Better Auth >= 1.7 registers genericOAuth
+   * providers as social providers, so the start is the core `/sign-in/social` (the pre-1.7 `/sign-in/oauth2` is gone)
+   * and the IdP callback is `/api/auth/callback/<providerId>`.
+   */
   signInSso: async (input: { providerId: string; callbackURL: string }) => {
-    const payload = (await authPost("/sign-in/oauth2", input)) as { url?: string } | null;
+    const payload = (await authPost("/sign-in/social", {
+      provider: input.providerId,
+      callbackURL: input.callbackURL,
+    })) as { url?: string } | null;
     if (!payload?.url) throw new Error("Single sign-on is not available");
     return payload.url;
   },
