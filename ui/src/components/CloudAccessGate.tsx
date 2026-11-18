@@ -177,6 +177,14 @@ export function CloudAccessGate({ allowMembershipRequest = false }: { allowMembe
     return <CloudSignIn cloud={healthQuery.data.cloud} returnTo={`${location.pathname}${location.search}${location.hash}`} />;
   }
 
+  // OIDC SSO instances (planeodev fork): the first admin arrives through the identity provider — a member of
+  // PAPERCLIP_AUTH_OIDC_ADMIN_GROUPS becomes instance_admin on their first SSO login — so a visitor with no session is
+  // sent to sign-in (which starts the SSO redirect), never to the first-admin claim screen they could not complete.
+  if (isBootstrapPending && healthQuery.data?.sso && !sessionQuery.data) {
+    const next = encodeURIComponent(`${location.pathname}${location.search}`);
+    return <Navigate to={`/auth?next=${next}`} replace />;
+  }
+
   if (isBootstrapPending) {
     const health = healthQuery.data;
     if (!health) {

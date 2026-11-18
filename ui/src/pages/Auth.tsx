@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { authApi } from "../api/auth";
@@ -50,6 +50,23 @@ export function AuthPage() {
     }
   }, [session, navigate, nextPath]);
 
+  // OIDC SSO instances (planeodev fork): no buttons — a visitor without a session is taken straight to the identity
+  // provider. Not when the IdP sent us back with `?error=` (that would loop); then the page below shows the error and a
+  // manual "Sign in with …" fallback.
+  const sso = healthQuery.data?.sso;
+  const ssoReturnedError = searchParams.get("error");
+  const [ssoAutoFailed, setSsoAutoFailed] = useState<string | null>(null);
+  const ssoAutoStarted = useRef(false);
+  const ssoAutoRedirect = !!sso && !session && !isSessionLoading && !sessionError && !ssoReturnedError && !ssoAutoFailed;
+  useEffect(() => {
+    if (!ssoAutoRedirect || !sso || ssoAutoStarted.current) return;
+    ssoAutoStarted.current = true;
+    authApi
+      .signInSso({ providerId: sso.providerId, callbackURL: nextPath })
+      .then((url) => window.location.assign(url))
+      .catch((err) => setSsoAutoFailed(err instanceof Error ? err.message : "Single sign-on failed"));
+  }, [ssoAutoRedirect, sso, nextPath]);
+
   const mutation = useMutation({
     mutationFn: async () => {
       if (mode === "sign_in") {
@@ -98,6 +115,14 @@ export function AuthPage() {
 
   if (healthQuery.data?.cloud) {
     return <CloudSignIn cloud={healthQuery.data.cloud} returnTo={nextPath} />;
+  }
+
+  if (ssoAutoRedirect) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center">
+        <PaperclipLoading className="min-h-0" />
+      </div>
+    );
   }
 
   return (
@@ -213,6 +238,11 @@ export function AuthPage() {
                 aria-describedby={error ? errorId : undefined}
               />
             </div>
+            {(ssoAutoFailed || ssoReturnedError) && !error && (
+              <p role="alert" className="text-xs text-destructive">
+                {`Single sign-on did not complete: ${ssoAutoFailed ?? ssoReturnedError}`}
+              </p>
+            )}
             {error && (
               <p id={errorId} role="alert" className="text-xs text-destructive">
                 {error}

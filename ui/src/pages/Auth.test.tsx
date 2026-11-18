@@ -16,6 +16,7 @@ const signInEmailMock = vi.hoisted(() => vi.fn());
 const signUpEmailMock = vi.hoisted(() => vi.fn());
 const healthMock = vi.hoisted(() => vi.fn());
 const beginCloudSignInMock = vi.hoisted(() => vi.fn());
+const signInSsoMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/health", () => ({ healthApi: { get: () => healthMock() } }));
 vi.mock("@/lib/cloud-sign-in", () => ({
@@ -28,6 +29,7 @@ vi.mock("../api/auth", () => ({
     getSession: () => getSessionMock(),
     signInEmail: (input: unknown) => signInEmailMock(input),
     signUpEmail: (input: unknown) => signUpEmailMock(input),
+    signInSso: (input: unknown) => signInSsoMock(input),
   },
 }));
 
@@ -462,5 +464,75 @@ describe("CliAuthPage rate-limit recovery", () => {
     expect(cliContainer.textContent).toContain("CLI access approved");
     expect(fetchCli.mock.calls.filter(([, init]) => init?.method === "POST").map(([url]) => String(url)))
       .toEqual([`/api/cli-auth/challenges/${challengeId}/approve`]);
+  });
+});
+
+describe("AuthPage on an OIDC SSO instance (planeodev fork)", () => {
+  let container: HTMLDivElement;
+  const ssoHealth = {
+    status: "ok",
+    deploymentMode: "authenticated",
+    bootstrapStatus: "bootstrap_pending",
+    sso: { providerId: "oidc", name: "Planeo SSO" },
+  };
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    getSessionMock.mockResolvedValue(null);
+    healthMock.mockResolvedValue(ssoHealth);
+    // Never resolves: the page must stay on its loading state while the browser leaves for the IdP.
+    signInSsoMock.mockReturnValue(new Promise(() => {}));
+  });
+
+  afterEach(() => {
+    container.remove();
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+  });
+
+  async function mountAt(path: string) {
+    const { root, queryClient } = renderAuthPage(container);
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={[path]}>
+          <QueryClientProvider client={queryClient}>
+            <Routes>
+              <Route path="/auth" element={<AuthPage />} />
+            </Routes>
+          </QueryClientProvider>
+        </MemoryRouter>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+    return root;
+  }
+
+  it("takes a visitor without a session straight to the IdP: no buttons, no form, no first-admin screen", async () => {
+    const root = await mountAt("/auth?next=%2FACME%2Fissues");
+    await vi.waitFor(() => expect(signInSsoMock).toHaveBeenCalledTimes(1));
+    expect(signInSsoMock).toHaveBeenCalledWith({ providerId: "oidc", callbackURL: "/ACME/issues" });
+    expect(container.querySelector("form")).toBeNull();
+    expect(container.querySelector("button")).toBeNull();
+    expect(container.textContent).not.toContain("waiting on its first admin");
+    await act(() => root.unmount());
+  });
+
+  it("does not loop when the IdP returns an error; shows it with a manual SSO fallback", async () => {
+    const root = await mountAt("/auth?error=access_denied");
+    expect(signInSsoMock).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Single sign-on did not complete: access_denied");
+    expect(container.textContent).toContain("Sign in with Planeo SSO");
+    expect(container.textContent).not.toContain("waiting on its first admin");
+    await act(() => root.unmount());
+  });
+
+  it("falls back to the manual button when starting SSO fails", async () => {
+    signInSsoMock.mockRejectedValue(new Error("Single sign-on is not available"));
+    const root = await mountAt("/auth");
+    await vi.waitFor(() => expect(container.textContent).toContain("Single sign-on did not complete: Single sign-on is not available"));
+    expect(container.textContent).toContain("Sign in with Planeo SSO");
+    await act(() => root.unmount());
   });
 });
