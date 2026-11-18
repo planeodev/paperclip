@@ -1,3 +1,4 @@
+import { publicOidcInfo } from "../auth/oidc.js";
 import { supportsLocalAiLogin } from "../services/local-ai-login-policy.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { Router } from "express";
@@ -231,6 +232,8 @@ export function healthRoutes(
   });
 
   router.get("/", async (req, res) => {
+    // Public SSO advertisement for the login page (provider id + display name only).
+    const sso = publicOidcInfo();
     const actorType = "actor" in req ? req.actor?.type : null;
     const exposeFullDetails = shouldExposeFullHealthDetails(
       actorType,
@@ -281,6 +284,7 @@ export function healthRoutes(
               commit,
               serverInfo,
               ...(cloud ? { cloud } : {}),
+              ...(sso ? { sso } : {}),
               ...(hiddenSettings.length ? { hiddenSettings } : {}),
             }
           : {
@@ -288,6 +292,7 @@ export function healthRoutes(
               deploymentMode: opts.deploymentMode,
               commit,
               ...(cloud ? { cloud } : {}),
+              ...(sso ? { sso } : {}),
               ...(hiddenSettings.length ? { hiddenSettings } : {}),
             },
       );
@@ -306,6 +311,7 @@ export function healthRoutes(
         commit,
         warmStandby: true,
         ...(cloud ? { cloud } : {}),
+        ...(sso ? { sso } : {}),
         ...(hiddenSettings.length ? { hiddenSettings } : {}),
       });
       return;
@@ -330,6 +336,7 @@ export function healthRoutes(
         ...(exposeFullDetails ? { serverInfo } : {}),
         ...(workspace ? { workspace } : {}),
         ...(cloud ? { cloud } : {}),
+        ...(sso ? { sso } : {}),
       });
       return;
     }
@@ -422,6 +429,7 @@ export function healthRoutes(
         // this instance becomes visible.
         ...(workspaceReadiness ? { workspace: workspaceReadiness } : {}),
         ...(cloud ? { cloud } : {}),
+        ...(sso ? { sso } : {}),
         ...(hiddenSettings.length ? { hiddenSettings } : {}),
       });
       return;
@@ -449,6 +457,7 @@ export function healthRoutes(
       ...(devServer ? { devServer } : {}),
       ...(workspaceReadiness ? { workspace: workspaceReadiness } : {}),
       ...(cloud ? { cloud } : {}),
+      ...(sso ? { sso } : {}),
       ...(hiddenSettings.length ? { hiddenSettings } : {}),
     });
   });

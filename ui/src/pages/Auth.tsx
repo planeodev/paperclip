@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { authApi } from "../api/auth";
@@ -25,6 +25,7 @@ export function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [ssoPending, setSsoPending] = useState(false);
   const errorId = "auth-error";
 
   const nextPath = useMemo(
@@ -48,6 +49,23 @@ export function AuthPage() {
       navigate(nextPath, { replace: true });
     }
   }, [session, navigate, nextPath]);
+
+  // OIDC SSO instances (planeodev fork): no buttons — a visitor without a session is taken straight to the identity
+  // provider. Not when the IdP sent us back with `?error=` (that would loop); then the page below shows the error and a
+  // manual "Sign in with …" fallback.
+  const sso = healthQuery.data?.sso;
+  const ssoReturnedError = searchParams.get("error");
+  const [ssoAutoFailed, setSsoAutoFailed] = useState<string | null>(null);
+  const ssoAutoStarted = useRef(false);
+  const ssoAutoRedirect = !!sso && !session && !isSessionLoading && !sessionError && !ssoReturnedError && !ssoAutoFailed;
+  useEffect(() => {
+    if (!ssoAutoRedirect || !sso || ssoAutoStarted.current) return;
+    ssoAutoStarted.current = true;
+    authApi
+      .signInSso({ providerId: sso.providerId, callbackURL: nextPath })
+      .then((url) => window.location.assign(url))
+      .catch((err) => setSsoAutoFailed(err instanceof Error ? err.message : "Single sign-on failed"));
+  }, [ssoAutoRedirect, sso, nextPath]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -99,6 +117,14 @@ export function AuthPage() {
     return <CloudSignIn cloud={healthQuery.data.cloud} returnTo={nextPath} />;
   }
 
+  if (ssoAutoRedirect) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center">
+        <PaperclipLoading className="min-h-0" />
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 flex bg-background">
       <div className="absolute top-4 right-4 z-10">
@@ -119,6 +145,33 @@ export function AuthPage() {
               ? "Use your email and password to access this instance."
               : "Create an account for this instance. Email confirmation is not required in v1."}
           </p>
+
+          {mode === "sign_in" && healthQuery.data?.sso && (
+            <div className="mt-6">
+              <button
+                type="button"
+                className="w-full rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                disabled={ssoPending}
+                onClick={async () => {
+                  const sso = healthQuery.data?.sso;
+                  if (!sso) return;
+                  setSsoPending(true);
+                  setError(null);
+                  try {
+                    window.location.assign(
+                      await authApi.signInSso({ providerId: sso.providerId, callbackURL: nextPath }),
+                    );
+                  } catch (err) {
+                    setSsoPending(false);
+                    setError(err instanceof Error ? err.message : "Single sign-on failed");
+                  }
+                }}
+              >
+                {`Sign in with ${healthQuery.data.sso.name}`}
+              </button>
+              <p className="mt-3 text-center text-xs text-muted-foreground">or use your email and password</p>
+            </div>
+          )}
 
           <form
             className="mt-6 space-y-4"
@@ -185,6 +238,11 @@ export function AuthPage() {
                 aria-describedby={error ? errorId : undefined}
               />
             </div>
+            {(ssoAutoFailed || ssoReturnedError) && !error && (
+              <p role="alert" className="text-xs text-destructive">
+                {`Single sign-on did not complete: ${ssoAutoFailed ?? ssoReturnedError}`}
+              </p>
+            )}
             {error && (
               <p id={errorId} role="alert" className="text-xs text-destructive">
                 {error}

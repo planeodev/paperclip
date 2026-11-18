@@ -234,4 +234,45 @@ describe("CloudAccessGate restart recovery", () => {
     expect(container.querySelector("[data-redirect]")?.getAttribute("data-redirect"))
       .toBe("/auth?next=%2FCON%2Fagents%2Fconan%2Finstructions%3Ftab%3Dedit");
   });
+
+  describe("OIDC SSO instance with no admin yet (bootstrap_pending)", () => {
+    const pendingSsoHealth = {
+      status: "ok",
+      deploymentMode: "authenticated",
+      deploymentExposure: "public",
+      bootstrapStatus: "bootstrap_pending",
+      bootstrapInviteActive: false,
+      sso: { providerId: "oidc", name: "Planeo SSO" },
+    };
+    const original = { ...responses };
+    afterEach(() => Object.assign(responses, original));
+
+    it("never shows the first-admin screen to a visitor without a session; sends them to sign-in", async () => {
+      responses["/api/health"] = pendingSsoHealth;
+      failingPath = "/api/auth/get-session";
+      failure = () => Response.json({ error: "unauthorized" }, { status: 401 });
+      await render();
+      expect(container.textContent).not.toContain("Set up instance");
+      expect(container.querySelector("[data-redirect]")?.getAttribute("data-redirect"))
+        .toBe("/auth?next=%2FCON%2Fagents%2Fconan%2Finstructions%3Ftab%3Dedit");
+    });
+
+    it("opens the board once the SSO admin's first login made the instance ready", async () => {
+      responses["/api/health"] = { ...pendingSsoHealth, bootstrapStatus: "ready" };
+      responses["/api/cli-auth/me"] = { isInstanceAdmin: true, companyIds: [] };
+      await render();
+      expect(container.textContent).not.toContain("Set up instance");
+      expect(container.querySelector("[data-redirect]")).toBeNull();
+      expect(container.querySelector("textarea")).not.toBeNull();
+    });
+
+    it("keeps the upstream first-admin screen when SSO is NOT configured", async () => {
+      const { sso: _sso, ...noSso } = pendingSsoHealth;
+      responses["/api/health"] = noSso;
+      failingPath = "/api/auth/get-session";
+      failure = () => Response.json({ error: "unauthorized" }, { status: 401 });
+      await render();
+      expect(container.textContent).toContain("Set up instance");
+    });
+  });
 });

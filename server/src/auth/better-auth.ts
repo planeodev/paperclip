@@ -12,6 +12,7 @@ import {
 } from "@paperclipai/db";
 import type { Config } from "../config.js";
 import { resolvePaperclipInstanceId } from "../home-paths.js";
+import { buildOidcPlugin, OIDC_PROVIDER_ID, oidcSessionHook, readOidcConfig } from "./oidc.js";
 import {
   workspaceLoginHandoffPlugin,
   type WorkspaceHandoffExpectedIdentity,
@@ -257,6 +258,32 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
     publicUrl,
   });
 
+  // Throws on a partial OIDC configuration: a half-configured SSO must fail startup, not silently fall back.
+  const oidc = readOidcConfig();
+  const plugins = [
+    // Registered only for a managed workspace instance: the plugin is what makes
+    // `Open workspace` password-independent, and a control-plane instance that
+    // was never handed a workspace key must not expose the exchange at all.
+    ...(resolveWorkspaceHandoffIdentity(config)
+      ? [
+          workspaceLoginHandoffPlugin({
+            db,
+            // Re-resolved per exchange so a hot restart cannot keep validating
+            // against an origin the control plane has since republished.
+            resolveExpectedIdentity: () =>
+              resolveWorkspaceHandoffIdentity(config) ?? {
+                key: null,
+                instanceId: null,
+                executionWorkspaceId: null,
+                companyId: null,
+                origin: null,
+              },
+          }),
+        ]
+      : []),
+    ...(oidc ? [buildOidcPlugin(oidc)] : []),
+  ];
+
   const authConfig = {
     baseURL: baseUrl,
     secret,
@@ -281,28 +308,15 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
       override: process.env.PAPERCLIP_AUTH_RATE_LIMIT_ENABLED,
     }),
     advanced: buildBetterAuthAdvancedOptions({ disableSecureCookies }),
-    // Registered only for a managed workspace instance: the plugin is what makes
-    // `Open workspace` password-independent, and a control-plane instance that
-    // was never handed a workspace key must not expose the exchange at all.
-    ...(resolveWorkspaceHandoffIdentity(config)
+    // OIDC SSO (planeodev fork, ./oidc.ts): an existing email/password user signing in through the trusted
+    // provider with the same email is linked, not duplicated (the seeded admin keeps its id and roles).
+    ...(oidc
       ? {
-          plugins: [
-            workspaceLoginHandoffPlugin({
-              db,
-              // Re-resolved per exchange so a hot restart cannot keep validating
-              // against an origin the control plane has since republished.
-              resolveExpectedIdentity: () =>
-                resolveWorkspaceHandoffIdentity(config) ?? {
-                  key: null,
-                  instanceId: null,
-                  executionWorkspaceId: null,
-                  companyId: null,
-                  origin: null,
-                },
-            }),
-          ],
+          account: { accountLinking: { enabled: true, trustedProviders: [OIDC_PROVIDER_ID] } },
+          databaseHooks: { session: { create: { after: oidcSessionHook(db, oidc) } } },
         }
       : {}),
+    ...(plugins.length ? { plugins } : {}),
   };
 
   if (!baseUrl) {
