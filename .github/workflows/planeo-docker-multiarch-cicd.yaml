@@ -30,3 +30,6 @@ jobs:
       docker-compose-file-name: docker-compose.yaml
       docker-compose-target-service: paperclip
       push-attestations: false
+      # The reusable workflow's default is 10 min; this monorepo's image (pnpm + Rust runner + UI) takes ~9 min to
+      # build and push, and the GHA cache export after it was cancelled at the 10-min mark (PR 1, run 44236648075).
+      github-job-timeout-minutes: 45
